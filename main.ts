@@ -24,6 +24,7 @@ interface ChatGPT_MDSettings {
 	generateAtCursor: boolean;
 	autoInferTitle: boolean;
 	dateFormat: string;
+	roleHeadingLevel: number;
 }
 
 const DEFAULT_SETTINGS: ChatGPT_MDSettings = {
@@ -37,6 +38,7 @@ const DEFAULT_SETTINGS: ChatGPT_MDSettings = {
 	generateAtCursor: false,
 	autoInferTitle: false,
 	dateFormat: "YYYYMMDDhhmmss",
+	roleHeadingLevel: 0,
 };
 
 interface Chat_MD_FrontMatter {
@@ -131,7 +133,7 @@ export default class ChatGPT_MD extends Plugin {
 					responseLines[i] = responseLines[i].split("data: ")[1];
 				}
 
-				const newLine = `\n\n<hr class="__chatgpt_plugin">\n\nrole::assistant\n\n`;
+				const newLine = `\n\n<hr class="__chatgpt_plugin">\n\n${this.headingLevelPrefix()}role::assistant\n\n`;
 				editor.replaceRange(newLine, editor.getCursor());
 
 				// move cursor to end of line
@@ -177,7 +179,7 @@ export default class ChatGPT_MD extends Plugin {
 
 				console.log(fullstr);
 
-				return { fullstr: fullstr, mode: "streaming"};
+				return { fullstr: fullstr, mode: "streaming" };
 			} else {
 				const responseJSON = JSON.parse(response);
 				return responseJSON.choices[0].message.content;
@@ -193,7 +195,7 @@ export default class ChatGPT_MD extends Plugin {
 	}
 
 	addHR(editor: Editor, role: string) {
-		const newLine = `\n\n<hr class="__chatgpt_plugin">\n\nrole::${role}\n\n`;
+		const newLine = `\n\n<hr class="__chatgpt_plugin">\n\n${this.headingLevelPrefix()}role::${role}\n\n`;
 		editor.replaceRange(newLine, editor.getCursor());
 
 		// move cursor to end of file
@@ -307,11 +309,20 @@ export default class ChatGPT_MD extends Plugin {
 	appendMessage(editor: Editor, role: string, message: string) {
 		/*
 		 append to bottom of editor file:
-		 	const newLine = `<hr class="__chatgpt_plugin">\nrole::${role}\n\n${message}`;
+		 	const newLine = `<hr class="__chatgpt_plugin">\n${this.headingLevelPrefix()}role::${role}\n\n${message}`;
 		*/
 
-		const newLine = `\n\n<hr class="__chatgpt_plugin">\n\nrole::${role}\n\n${message}\n\n<hr class="__chatgpt_plugin">\n\nrole::user\n\n`;
+		const newLine = `\n\n<hr class="__chatgpt_plugin">\n\n${this.headingLevelPrefix()}role::${role}\n\n${message}\n\n<hr class="__chatgpt_plugin">\n\nrole::user\n\n`;
 		editor.replaceRange(newLine, editor.getCursor());
+	}
+
+	headingLevelPrefix() {
+		const headingLevel = this.settings.roleHeadingLevel;
+		if (headingLevel === 0) {
+			return "";
+		} else {
+			return "#".repeat(headingLevel) + " ";
+		}
 	}
 
 	async inferTitleFromMessages(messages: string[]) {
@@ -483,7 +494,7 @@ export default class ChatGPT_MD extends Plugin {
 						if (response.mode === "streaming") {
 							responseStr = response.fullstr;
 							// append \n\n<hr class="__chatgpt_plugin">\n\nrole::user\n\n
-							const newLine = `\n\n<hr class="__chatgpt_plugin">\n\nrole::user\n\n`;
+							const newLine = `\n\n<hr class="__chatgpt_plugin">\n\n${this.headingLevelPrefix()}role::user\n\n`;
 							editor.replaceRange(newLine, editor.getCursor());
 
 							// move cursor to end of completion
@@ -501,16 +512,16 @@ export default class ChatGPT_MD extends Plugin {
 							console.log("[ChatGPT MD] auto infer title");
 							const title = view.file.basename;
 
-							const messagesWithResponse = messages.concat(
-								responseStr
-							);
+							const messagesWithResponse =
+								messages.concat(responseStr);
 
 							if (
 								this.isTitleTimestampFormat(title) &&
 								messagesWithResponse.length >= 4
 							) {
-								
-								this.inferTitleFromMessages(messagesWithResponse)
+								this.inferTitleFromMessages(
+									messagesWithResponse
+								)
 									.then((title) => {
 										console.log(title);
 										if (title) {
@@ -871,6 +882,20 @@ class ChatGPT_MDSettingsTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.dateFormat)
 					.onChange(async (value) => {
 						this.plugin.settings.dateFormat = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		// heading level for role::user|assistant
+		new Setting(containerEl)
+			.setName("Heading Level")
+			.setDesc("Heading level for role::user|assistant")
+			.addSlider((slider) =>
+				slider
+					.setLimits(0, 6, 1)
+					.setValue(this.plugin.settings.roleHeadingLevel)
+					.onChange(async (value) => {
+						this.plugin.settings.roleHeadingLevel = value;
 						await this.plugin.saveSettings();
 					})
 			);
